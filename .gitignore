@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+
+#Datasets
+datasets/*
+datasets/IRMAS-Sample/*
+!datasets/IRMAS-Sample.zip
