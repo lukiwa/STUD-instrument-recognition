@@ -1,5 +1,5 @@
 matplotlib==3.6.3
-numpy==1.23.1
+numpy==1.23.2
 pandas==1.5.2
 seaborn==0.12.2
 tqdm==4.64.1
@@ -9,5 +9,4 @@ scipy==1.10.0
 keras==2.11.0
 autopep8==2.0.1
 imbalanced-learn==0.10.1
-numba==0.56.4 
 librosa==0.10.0.post2 
