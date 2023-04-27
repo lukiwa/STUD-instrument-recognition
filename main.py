@@ -3,24 +3,30 @@ from keras.models import Sequential
 import os
 import numpy as np
 import librosa
-import tensorflow as tf
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, RepeatedKFold
 import matplotlib.pyplot as plt
 
 
-def load_audio_files(data_dir, instruments):
+def load_audio_files(data_dir, instruments, features_type):
     X = []
     y = []
+    counter = 0
     for instrument in instruments:
         instrument_dir = os.path.join(data_dir, instrument)
         for filename in os.listdir(instrument_dir):
             if filename.endswith('.wav'):
                 filepath = os.path.join(instrument_dir, filename)
                 audio, sr = librosa.load(filepath, sr=None)
-                mfccs = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=20)
-                X.append(mfccs.T)
+                if features_type == 'mfcc':
+                    feature = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=20)
+                elif features_type == 'mel':
+                    feature = librosa.feature.melspectrogram(y=audio, sr=sr)
+                X.append(feature.T)
                 y.append(instrument)
+                counter += 1
+                if counter == 5:
+                    break
     X = np.array(X)
     y = np.array(y)
     return X, y
@@ -35,21 +41,25 @@ def preprocess_labels(y):
     return y
 
 
-def create_model(input_shape, num_outputs):
+def create_model(input_shape, num_outputs, with_dropout):
     model = Sequential()
     model.add(Conv2D(32, kernel_size=(3, 3), activation='relu',
               input_shape=input_shape, padding='same'))
     model.add(MaxPooling2D(pool_size=(2, 2)))
-    model.add(Dropout(0.25))
+    if with_dropout:
+        model.add(Dropout(0.25))
     model.add(Conv2D(64, kernel_size=(3, 3), activation='relu'))
     model.add(MaxPooling2D(pool_size=(2, 2)))
-    model.add(Dropout(0.25))
+    if with_dropout:
+        model.add(Dropout(0.25))
     model.add(Conv2D(128, kernel_size=(3, 3), activation='relu'))
     model.add(MaxPooling2D(pool_size=(2, 2)))
-    model.add(Dropout(0.4))
+    if with_dropout:
+        model.add(Dropout(0.4))
     model.add(Flatten())
     model.add(Dense(128, activation='relu'))
-    model.add(Dropout(0.3))
+    if with_dropout:
+        model.add(Dropout(0.3))
     model.add(Dense(num_outputs, activation='softmax'))
 
     model.compile(loss='categorical_crossentropy',
@@ -81,25 +91,52 @@ def plot_history(history):
     plt.show()
 
 
+def log_stats(title, lose, accuracy):
+    file = open('logs.log', 'a+')
+    file.write(title + '\n')
+    file.write('Lose ')
+    file.write(str(lose) + '\n')
+    file.write('Accuracy ')
+    file.write(str(accuracy) + '\n')
+    file.close()
+
+
+def experiment(X, y, instruments, with_dropout, epochs, title):
+    print(title)
+    rkf = RepeatedKFold(n_splits=2, n_repeats=1, random_state=123)
+    lose = []
+    accuracy = []
+    for i, (train_index, test_index) in enumerate(rkf.split(X)):
+        X_train = X[train_index]
+        y_train = y[train_index]
+        X_val = X[test_index]
+        y_val = y[test_index]
+        model = create_model(
+            (X_train.shape[1], X_train.shape[2], 1), num_outputs=len(instruments), with_dropout=with_dropout)
+        history = train_model(model, X_train, X_val, y_train, y_val, 32, epochs)
+
+        score = model.evaluate(X_val, y_val, verbose=0)
+        lose.append(score[0])
+        accuracy.append(score[1])
+    log_stats(title, lose, accuracy)
+
+
 def main():
     data_dir = 'datasets/IRMAS-TrainingData'
     instruments = ['cel', 'cla', 'flu']
 
-    X, y = load_audio_files(data_dir, instruments)
+    X, y = load_audio_files(data_dir, instruments, 'mel')
     y = preprocess_labels(y)
+    experiment(X, y, instruments, True, 15, 'MEL + droput')
+    experiment(X, y, instruments, False, 15, 'MEL - droput')
 
-    X_train, X_val, y_train, y_val = train_test_split(
-        X, y, test_size=0.2, random_state=42)
-
-    model = create_model(
-        (X_train.shape[1], X_train.shape[2], 1), num_outputs=len(instruments))
-    history = train_model(model, X_train, X_val, y_train, y_val, 32, 15)
-    plot_history(history)
-
-    score = model.evaluate(X_val, y_val, verbose=0)
-    print('Validation loss:', score[0])
-    print('Validation accuracy:', score[1])
-
+    X, y = load_audio_files(data_dir, instruments, 'mfcc')
+    y = preprocess_labels(y)
+    experiment(X, y, instruments, True, 15, 'MFCC + droput')
+    experiment(X, y, instruments, False, 15, 'MFCC - droput')
+    experiment(X, y, instruments, True, 5, 'MFCC 5 epok')
+    experiment(X, y, instruments, True, 10, 'MFCC 10 epok')
+    experiment(X, y, instruments, True, 20, 'MFCC 20 epok')
 
 
 if __name__ == "__main__":
